@@ -1,64 +1,76 @@
 # CarTwinViewer-PC
 
-Windows host-side viewer for a miniature car digital-twin demo.
+`CarTwinViewer-PC` 是迷你小车数字孪生演示项目的 PC 上位机程序。
 
-This project renders a scrolling road scene, a controlled vehicle, and an obstacle vehicle. It communicates with the STM32 firmware over a serial port so the PC viewer can display the car position and send obstacle position data back to the board.
+本项目是对原始 `CarTwinViewer` 上位机的重构版本：原版本使用 EasyX 绘图和较偏 C 风格的结构体/函数指针组织方式；当前版本改为基于 SDL2 / SDL2_image 的 C++ 实现，并重新整理了目录结构、构建脚本和资源管理方式。此次文档更新只说明项目现状，不实现新的功能逻辑。
 
-## Project Role
+## 项目作用
 
-- Host-side visualization application
-- SDL2/SDL2_image based Windows desktop program
-- Receives the STM32 car position through UART
-- Sends obstacle car position to the STM32 firmware
+- 在 Windows 桌面窗口中显示道路、主车和障碍车。
+- 通过串口接收 STM32 下位机发送的主车坐标。
+- 将 PC 端生成的障碍车坐标发送给 STM32 下位机。
+- 与配套下位机项目 `MiniCar-STM32` 一起组成演示系统。
 
-The matching firmware project is `MiniCar-STM32`.
-
-## Directory Layout
+## 目录结构
 
 ```text
-assets/      Image resources used by the viewer
-src/         C++ source files
-sdl2/        Bundled SDL2 and SDL2_image MinGW libraries
-build.ps1    PowerShell build script
+assets/       图像资源
+src/          C++ 源码
+sdl2/         随项目携带的 SDL2 / SDL2_image MinGW 版本库
+build.ps1     PowerShell 一键构建脚本
 CMakeLists.txt
 ```
 
-## Build
+## 构建方式
 
-The project expects a MinGW g++ toolchain. By default, `build.ps1` tries:
+项目默认使用 MinGW g++ 工具链。`build.ps1` 会优先尝试使用：
 
 ```powershell
 D:\mingw64\bin\g++.exe
 ```
 
-Build with:
+在项目根目录执行：
 
 ```powershell
 .\build.ps1
 ```
 
-The executable, DLLs, and copied assets are placed under `build/`.
+构建完成后，程序、依赖 DLL 和资源文件会被放到 `build/` 目录下。
 
-## Runtime Notes
+## 运行说明
 
-- Serial port defaults to `COM4`.
-- Baud rate defaults to `9600`.
-- The viewer expects the STM32 firmware to send car coordinates.
-- The viewer sends obstacle coordinates to the STM32 firmware.
+- 默认串口号：`COM4`
+- 默认波特率：`9600`
+- 程序启动后会打开 SDL 窗口并绘制滚动道路场景。
+- 如果 STM32 下位机通过串口发送主车坐标，PC 端会根据接收数据更新主车位置。
+- PC 端会将障碍车坐标按约定协议发送给 STM32 下位机。
 
-## Serial Frame
+## 串口协议
 
-The current protocol follows the original teaching project format:
+当前协议沿用原教学项目格式：
 
 ```text
 %xxx\0yyy$
 ```
 
-where `xxx` is the X coordinate and `yyy` is the Y coordinate. This format is intentionally documented here because both the PC and STM32 projects must stay in sync.
+其中：
 
-## Current Limitations
+- `%` 表示一帧开始。
+- `$` 表示一帧结束。
+- `xxx` 表示 X 坐标。
+- `yyy` 表示 Y 坐标。
+- `\0` 用作两个字段之间的分隔符。
 
-- Serial parsing is minimal and assumes aligned frames.
-- The serial port is fixed in code.
-- The protocol is fragile for negative values and values wider than the expected field.
-- This repository currently documents the refactored SDL version only; no new behavior has been implemented as part of this README pass.
+PC 端和 STM32 端必须保持同一协议格式，否则坐标解析会出错。
+
+## 当前限制
+
+- 串口号仍固定在代码配置中，换设备时可能需要手动修改。
+- 串口协议比较脆弱，对负数、字段超宽、丢帧和错位帧处理不足。
+- 串口线程和渲染线程之间的共享状态仍需要进一步加固。
+- 碰撞检测、异常处理和自动重连等能力还可以继续完善。
+- 本 README 只描述当前重构版状态，不代表这些问题已经被修复。
+
+## 配套项目
+
+- 下位机固件：`MiniCar-STM32`
