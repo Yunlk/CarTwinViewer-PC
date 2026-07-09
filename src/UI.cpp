@@ -1,5 +1,15 @@
 #include "UI.h"
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+namespace {
+bool keyEquals(const char* key, int len, const char* expected) {
+    return static_cast<int>(std::strlen(expected)) == len &&
+           std::strncmp(key, expected, len) == 0;
+}
+}
 
 bool UI::init() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
@@ -44,20 +54,146 @@ UI::~UI() {
 
 void UI::serialLoop() {
     PortHandle port = serialOpen(COM_PORT, COM_BAUD, COM_BITS, COM_STOPBITS, COM_PARITY);
+    m_serialConnected = port != nullptr;
     memset(m_sendBuf, 0, COM_BUF_SIZE);
     memset(m_recvBuf, 0, COM_BUF_SIZE);
+    memset(m_frameBuf, 0, COM_BUF_SIZE);
+    m_frameLen = 0;
+
+    if (!port) {
+        while (m_running) {
+            SDL_Delay(100);
+        }
+        return;
+    }
 
     while (m_running) {
-        serialRecv(port, m_recvBuf, COM_BUF_SIZE);
-        m_road.unpackRecvBuf(m_recvBuf, m_player);
+        const int rxLen = serialRecv(port, m_recvBuf, COM_BUF_SIZE - 1);
+        m_lastRxOk = rxLen > 0;
+        if (rxLen > 0) {
+            processSerialBytes(m_recvBuf, rxLen);
+        }
         SDL_Delay(COM_TIME_MS);
 
         m_obstacle.packSendBuf(m_sendBuf);
-        serialSend(port, m_sendBuf, COM_BUF_SIZE);
+        const int txLen = serialSend(port, m_sendBuf, OBSTACLE_FRAME_SIZE);
+        m_lastTxOk = txLen == OBSTACLE_FRAME_SIZE;
+        if (txLen == OBSTACLE_FRAME_SIZE) {
+            ++m_txFrameCount;
+        }
         SDL_Delay(COM_TIME_MS);
     }
 
+    m_serialConnected = false;
     serialClose(port);
+}
+
+void UI::processSerialBytes(const char* data, int len) {
+    for (int i = 0; i < len; ++i) {
+        const char ch = data[i];
+        if (ch == SOFT_CMD_BEGIN) {
+            m_frameLen = 0;
+        }
+
+        if (m_frameLen >= COM_BUF_SIZE - 1) {
+            m_frameLen = 0;
+        }
+
+        m_frameBuf[m_frameLen++] = ch;
+
+        if (ch == SOFT_CMD_END) {
+            handleSerialFrame(m_frameBuf, m_frameLen);
+            m_frameLen = 0;
+            memset(m_frameBuf, 0, COM_BUF_SIZE);
+        }
+    }
+}
+
+void UI::handleSerialFrame(const char* frame, int len) {
+    if (len <= 0 || frame[0] != SOFT_CMD_BEGIN) {
+        return;
+    }
+
+    ++m_rxFrameCount;
+    if (parseTelemetryFrame(frame, len)) {
+        m_lastRxOk = true;
+        return;
+    }
+
+    m_road.unpackRecvBuf(frame, m_player);
+}
+
+bool UI::parseTelemetryFrame(const char* frame, int len) {
+    bool hasKeyValue = false;
+    for (int i = 0; i < len; ++i) {
+        if (frame[i] == '=') {
+            hasKeyValue = true;
+            break;
+        }
+    }
+    if (!hasKeyValue) {
+        return false;
+    }
+
+    int index = 1;
+    while (index < len && frame[index] != SOFT_CMD_END) {
+        if (frame[index] == ',') {
+            ++index;
+            continue;
+        }
+
+        const int keyStart = index;
+        while (index < len && frame[index] != '=' && frame[index] != ',' &&
+               frame[index] != SOFT_CMD_END) {
+            ++index;
+        }
+        if (index >= len || frame[index] != '=') {
+            while (index < len && frame[index] != ',' && frame[index] != SOFT_CMD_END) {
+                ++index;
+            }
+            continue;
+        }
+
+        const int keyLen = index - keyStart;
+        ++index;
+
+        char* end = nullptr;
+        const long value = std::strtol(&frame[index], &end, 10);
+        if (end == &frame[index]) {
+            while (index < len && frame[index] != ',' && frame[index] != SOFT_CMD_END) {
+                ++index;
+            }
+            continue;
+        }
+
+        if (keyEquals(&frame[keyStart], keyLen, "X")) {
+            m_player.x = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "Y")) {
+            m_player.y = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "HB")) {
+            m_heartbeat = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "RX")) {
+            // STM32-side count of frames received from the PC.
+        } else if (keyEquals(&frame[keyStart], keyLen, "TX")) {
+            // STM32-side count of frames sent to the PC.
+        } else if (keyEquals(&frame[keyStart], keyLen, "RL")) {
+            m_leftRpm = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "RR")) {
+            m_rightRpm = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "V")) {
+            m_vddaMv = static_cast<int>(value);
+        } else if (keyEquals(&frame[keyStart], keyLen, "ST")) {
+            m_mcuStatus = static_cast<int>(value);
+        }
+
+        index = static_cast<int>(end - frame);
+        while (index < len && frame[index] != ',' && frame[index] != SOFT_CMD_END) {
+            ++index;
+        }
+    }
+
+    m_telemetryFresh = true;
+    return true;
 }
 
 void UI::handleInput() {
@@ -88,6 +224,31 @@ void UI::drawCollisionBox() const {
     SDL_RenderDrawRect(m_renderer, &r2);
 }
 
+DashboardData UI::makeDashboardData() const {
+    DashboardData data;
+    data.playerX = m_player.x;
+    data.playerY = m_player.y;
+    data.playerSpeed = m_player.speed;
+    data.playerLane = m_player.lane;
+    data.obstacleX = m_obstacle.x;
+    data.obstacleY = m_obstacle.y;
+    data.obstacleSpeed = m_obstacle.speed;
+    data.obstacleLane = m_obstacle.lane;
+    data.collisionCount = m_collisionCount;
+    data.heartbeat = m_heartbeat;
+    data.rxFrameCount = m_rxFrameCount;
+    data.txFrameCount = m_txFrameCount;
+    data.leftRpm = m_leftRpm;
+    data.rightRpm = m_rightRpm;
+    data.vddaMv = m_vddaMv;
+    data.mcuStatus = m_mcuStatus;
+    data.telemetryFresh = m_telemetryFresh;
+    data.serialConnected = m_serialConnected;
+    data.lastRxOk = m_lastRxOk;
+    data.lastTxOk = m_lastTxOk;
+    return data;
+}
+
 void UI::run() {
     while (m_running) {
         handleInput();
@@ -101,16 +262,22 @@ void UI::run() {
         m_player.draw(m_renderer);
         m_obstacle.draw(m_renderer);
 
-        if (Road::checkCollision(m_player, m_obstacle.x, m_obstacle.y)) {
+        const bool collided = Road::checkCollision(m_player, m_obstacle.x, m_obstacle.y);
+        if (collided) {
+            ++m_collisionCount;
             drawCollisionBox();
-            SDL_RenderPresent(m_renderer);
+        }
+
+        m_dashboard.draw(m_renderer, makeDashboardData());
+        SDL_RenderPresent(m_renderer);
+
+        if (collided) {
             printf("Collision detected! Reset.\n");
             m_player.reset();
             m_obstacle.reset();
             continue;
         }
 
-        SDL_RenderPresent(m_renderer);
         SDL_Delay(FRAME_DELAY);
     }
 }

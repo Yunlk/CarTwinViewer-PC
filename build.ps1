@@ -19,6 +19,7 @@ $Sources = @(
     "$SrcDir\Road.cpp",
     "$SrcDir\Obstacle.cpp",
     "$SrcDir\Serial.cpp",
+    "$SrcDir\Dashboard.cpp",
     "$SrcDir\UI.cpp"
 )
 

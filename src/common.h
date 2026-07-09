@@ -3,7 +3,7 @@
 #include <SDL.h>
 
 // ========== 屏幕 / 窗口 ==========
-constexpr int WIN_WIDTH   = 350;
+constexpr int WIN_WIDTH   = 560;
 constexpr int WIN_HEIGHT  = 600;
 constexpr int FPS         = 60;
 constexpr int FRAME_DELAY = 1000 / FPS;
@@ -12,6 +12,8 @@ constexpr int FRAME_DELAY = 1000 / FPS;
 constexpr int ROAD_WIDTH    = 350;
 constexpr int ROAD_HEIGHT   = 600;
 constexpr int ROAD_SPEED    = 5;
+constexpr int DASHBOARD_WIDTH = WIN_WIDTH - ROAD_WIDTH;
+constexpr int DASHBOARD_X     = ROAD_WIDTH;
 
 // ========== 主车参数 ==========
 constexpr int CAR_WIDTH     = 98;
@@ -40,13 +42,14 @@ constexpr const char* IMG_OBSTACLE   = "assets/Car2.png";
 constexpr const char* IMG_OBSTACLE_OUT = "assets/Car01.png";
 
 // ========== 串口 ==========
-constexpr int  COM_PORT       = 4;
+constexpr int  COM_PORT       = 12;
 constexpr int  COM_BAUD       = 9600;
 constexpr int  COM_BITS       = 8;
 constexpr int  COM_STOPBITS   = 1;
 constexpr int  COM_PARITY     = 0;
 constexpr int  COM_TIME_MS    = 5;
-constexpr int  COM_BUF_SIZE   = 20;
+constexpr int  COM_BUF_SIZE   = 128;
+constexpr int  OBSTACLE_FRAME_SIZE = 10;
 constexpr int  DATA_OCT       = 10;
 
 constexpr char SOFT_CMD_BEGIN = '%';

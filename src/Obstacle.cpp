@@ -1,5 +1,6 @@
 #include "Obstacle.h"
 #include "Car.h"
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -35,7 +36,7 @@ void Obstacle::packSendBuf(char* buf) const {
     buf[0] = SOFT_CMD_BEGIN;
     snprintf(&buf[1], 4, "%03d", x);
     buf[4] = SOFT_CMD_RET;
-    snprintf(&buf[5], 4, "%03d", y);
-    buf[8] = SOFT_CMD_END;
-    buf[9] = '\0';
+    snprintf(&buf[5], 5, "%4d", y);
+    buf[9] = SOFT_CMD_END;
+    buf[10] = '\0';
 }
