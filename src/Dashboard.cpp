@@ -86,8 +86,11 @@ void Dashboard::draw(SDL_Renderer* renderer, const DashboardData& data) const {
     drawSection(renderer, SECTION_X, 54, SECTION_W, 74);
     drawText(renderer, SECTION_X + 10, 66, "LINK", 1, TEXT);
     drawStatusLed(renderer, SECTION_X + 62, 63, data.serialConnected ? GREEN : RED);
-    drawText(renderer, SECTION_X + 86, 64, data.serialConnected ? "ONLINE" : "OFF", 1,
-             data.serialConnected ? GREEN : RED);
+    char portText[16] = "SCAN";
+    if (data.serialConnected && data.serialPort > 0) {
+        std::snprintf(portText, sizeof(portText), "COM%d", data.serialPort);
+    }
+    drawText(renderer, SECTION_X + 86, 64, portText, 1, data.serialConnected ? GREEN : RED);
     drawText(renderer, SECTION_X + 10, 86, "MCU", 1, TEXT);
     drawStatusLed(renderer, SECTION_X + 62, 83, data.mcuStatus ? GREEN : MUTED);
     drawText(renderer, SECTION_X + 86, 84, data.mcuStatus ? "RUN" : "IDLE", 1,
@@ -111,8 +114,17 @@ void Dashboard::draw(SDL_Renderer* renderer, const DashboardData& data) const {
     drawNumber(renderer, SECTION_X + 76, 212, data.rightRpm, 2, GREEN);
 
     drawSection(renderer, SECTION_X, 262, SECTION_W, 74);
-    drawText(renderer, SECTION_X + 10, 274, "LANE", 1, TEXT);
-    drawLane(renderer, SECTION_X + 12, 296, data.playerLane);
+    drawText(renderer, SECTION_X + 10, 274, "MODE", 1, TEXT);
+    drawStatusLed(renderer, SECTION_X + 62, 271,
+                  data.autoMode ? GREEN : (data.modeCommandPending ? AMBER : MUTED));
+    fillRect(renderer, {MODE_TOGGLE_X, MODE_TOGGLE_Y, MODE_TOGGLE_W, MODE_TOGGLE_H},
+             data.autoMode ? GREEN : SDL_Color{25, 39, 52, 255});
+    drawRect(renderer, {MODE_TOGGLE_X, MODE_TOGGLE_Y, MODE_TOGGLE_W, MODE_TOGGLE_H},
+             data.modeCommandPending ? AMBER : BORDER);
+    drawText(renderer, MODE_TOGGLE_X + 14, MODE_TOGGLE_Y + 7,
+             data.autoMode ? "AUTO" : "MAN", 1, data.autoMode ? BG : TEXT);
+    drawText(renderer, SECTION_X + 10, 306, "LANE", 1, TEXT);
+    drawLane(renderer, SECTION_X + 44, 298, data.playerLane);
 
     drawSection(renderer, SECTION_X, 346, SECTION_W, 62);
     drawText(renderer, SECTION_X + 10, 360, "SPEED", 1, TEXT);

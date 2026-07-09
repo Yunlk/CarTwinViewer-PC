@@ -9,6 +9,25 @@ bool keyEquals(const char* key, int len, const char* expected) {
     return static_cast<int>(std::strlen(expected)) == len &&
            std::strncmp(key, expected, len) == 0;
 }
+
+Lane laneFromX(int x) {
+    const int d0 = std::abs(x - LANE_0_X);
+    const int d1 = std::abs(x - LANE_1_X);
+    const int d2 = std::abs(x - LANE_2_X);
+
+    if (d0 <= d1 && d0 <= d2) {
+        return Lane::L0;
+    }
+    if (d1 <= d0 && d1 <= d2) {
+        return Lane::L1;
+    }
+    return Lane::L2;
+}
+
+bool pointInModeToggle(int x, int y) {
+    return x >= MODE_TOGGLE_X && x <= MODE_TOGGLE_X + MODE_TOGGLE_W &&
+           y >= MODE_TOGGLE_Y && y <= MODE_TOGGLE_Y + MODE_TOGGLE_H;
+}
 }
 
 bool UI::init() {
@@ -53,39 +72,100 @@ UI::~UI() {
 }
 
 void UI::serialLoop() {
-    PortHandle port = serialOpen(COM_PORT, COM_BAUD, COM_BITS, COM_STOPBITS, COM_PARITY);
-    m_serialConnected = port != nullptr;
     memset(m_sendBuf, 0, COM_BUF_SIZE);
     memset(m_recvBuf, 0, COM_BUF_SIZE);
     memset(m_frameBuf, 0, COM_BUF_SIZE);
     m_frameLen = 0;
 
-    if (!port) {
-        while (m_running) {
-            SDL_Delay(100);
-        }
-        return;
-    }
-
     while (m_running) {
-        const int rxLen = serialRecv(port, m_recvBuf, COM_BUF_SIZE - 1);
-        m_lastRxOk = rxLen > 0;
-        if (rxLen > 0) {
-            processSerialBytes(m_recvBuf, rxLen);
-        }
-        SDL_Delay(COM_TIME_MS);
+        PortHandle port = nullptr;
+        SerialPortInfo activePort;
+        const auto ports = serialListPorts();
 
-        m_obstacle.packSendBuf(m_sendBuf);
-        const int txLen = serialSend(port, m_sendBuf, OBSTACLE_FRAME_SIZE);
-        m_lastTxOk = txLen == OBSTACLE_FRAME_SIZE;
-        if (txLen == OBSTACLE_FRAME_SIZE) {
-            ++m_txFrameCount;
+        for (const auto& candidate : ports) {
+            if (!m_running) {
+                break;
+            }
+
+            port = serialOpen(candidate.index, COM_BAUD, COM_BITS, COM_STOPBITS,
+                              COM_PARITY, false);
+            if (port) {
+                activePort = candidate;
+                m_serialPort = activePort.index;
+                m_serialConnected = true;
+                m_lastRxOk = false;
+                m_lastTxOk = false;
+                printf("Serial connected: COM%d %s\n", activePort.index,
+                       activePort.name.c_str());
+                break;
+            }
         }
-        SDL_Delay(COM_TIME_MS);
+
+        if (!port) {
+            m_serialConnected = false;
+            m_serialPort = 0;
+            m_lastRxOk = false;
+            m_lastTxOk = false;
+            m_telemetryFresh = false;
+            SDL_Delay(COM_RESCAN_MS);
+            continue;
+        }
+
+        while (m_running && port) {
+            const int rxLen = serialRecv(port, m_recvBuf, COM_BUF_SIZE - 1);
+            if (rxLen < 0) {
+                printf("Serial read failed on COM%d, reconnecting.\n", activePort.index);
+                break;
+            }
+            m_lastRxOk = rxLen > 0;
+            if (rxLen > 0) {
+                processSerialBytes(m_recvBuf, rxLen);
+            }
+            SDL_Delay(COM_TIME_MS);
+
+            m_obstacle.packSendBuf(m_sendBuf);
+            const int txLen = serialSend(port, m_sendBuf, OBSTACLE_FRAME_SIZE);
+            m_lastTxOk = txLen == OBSTACLE_FRAME_SIZE;
+            if (txLen == OBSTACLE_FRAME_SIZE) {
+                ++m_txFrameCount;
+            } else {
+                printf("Serial write failed on COM%d, reconnecting.\n", activePort.index);
+                break;
+            }
+
+            const int pendingMode = m_pendingModeCommand.load();
+            if (pendingMode == CONTROL_MODE_AUTO || pendingMode == CONTROL_MODE_MANUAL) {
+                char commandBuf[COM_BUF_SIZE] = {};
+                const int commandLen = std::snprintf(commandBuf, sizeof(commandBuf),
+                                                     "%cMODE=%d%c",
+                                                     SOFT_CMD_BEGIN, pendingMode,
+                                                     SOFT_CMD_END);
+                const int commandTxLen = serialSend(port, commandBuf, commandLen);
+                m_lastTxOk = commandTxLen == commandLen;
+                if (commandTxLen == commandLen) {
+                    int expected = pendingMode;
+                    m_pendingModeCommand.compare_exchange_strong(expected, -1);
+                    ++m_txFrameCount;
+                } else {
+                    printf("Serial mode command failed on COM%d, reconnecting.\n",
+                           activePort.index);
+                    break;
+                }
+            }
+            SDL_Delay(COM_TIME_MS);
+        }
+
+        serialClose(port);
+        m_serialConnected = false;
+        m_serialPort = 0;
+        m_lastRxOk = false;
+        m_lastTxOk = false;
+        m_telemetryFresh = false;
+        m_mcuStatus = 0;
+        m_frameLen = 0;
+        memset(m_frameBuf, 0, COM_BUF_SIZE);
+        SDL_Delay(COM_RESCAN_MS);
     }
-
-    m_serialConnected = false;
-    serialClose(port);
 }
 
 void UI::processSerialBytes(const char* data, int len) {
@@ -121,6 +201,7 @@ void UI::handleSerialFrame(const char* frame, int len) {
     }
 
     m_road.unpackRecvBuf(frame, m_player);
+    m_player.lane = laneFromX(m_player.x);
 }
 
 bool UI::parseTelemetryFrame(const char* frame, int len) {
@@ -168,6 +249,7 @@ bool UI::parseTelemetryFrame(const char* frame, int len) {
 
         if (keyEquals(&frame[keyStart], keyLen, "X")) {
             m_player.x = static_cast<int>(value);
+            m_player.lane = laneFromX(m_player.x);
         } else if (keyEquals(&frame[keyStart], keyLen, "Y")) {
             m_player.y = static_cast<int>(value);
         } else if (keyEquals(&frame[keyStart], keyLen, "HB")) {
@@ -184,6 +266,7 @@ bool UI::parseTelemetryFrame(const char* frame, int len) {
             m_vddaMv = static_cast<int>(value);
         } else if (keyEquals(&frame[keyStart], keyLen, "ST")) {
             m_mcuStatus = static_cast<int>(value);
+            m_autoMode = (static_cast<int>(value) & MCU_STATUS_AUTO_MODE) != 0;
         }
 
         index = static_cast<int>(end - frame);
@@ -196,17 +279,47 @@ bool UI::parseTelemetryFrame(const char* frame, int len) {
     return true;
 }
 
+void UI::requestMode(int mode) {
+    if (mode != CONTROL_MODE_AUTO && mode != CONTROL_MODE_MANUAL) {
+        return;
+    }
+
+    m_pendingModeCommand = mode;
+    m_autoMode = mode == CONTROL_MODE_AUTO;
+}
+
+void UI::requestModeToggle() {
+    requestMode(m_autoMode ? CONTROL_MODE_MANUAL : CONTROL_MODE_AUTO);
+}
+
 void UI::handleInput() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) {
             m_running = false;
         }
+        if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
+            if (pointInModeToggle(e.button.x, e.button.y)) {
+                requestModeToggle();
+            }
+        }
         if (e.type == SDL_KEYDOWN) {
             switch (e.key.keysym.sym) {
-                case SDLK_1: m_player.setLane(Lane::L0); break;
-                case SDLK_2: m_player.setLane(Lane::L1); break;
-                case SDLK_3: m_player.setLane(Lane::L2); break;
+                case SDLK_1:
+                case SDLK_KP_1:
+                    m_player.setLane(Lane::L0);
+                    break;
+                case SDLK_2:
+                case SDLK_KP_2:
+                    m_player.setLane(Lane::L1);
+                    break;
+                case SDLK_3:
+                case SDLK_KP_3:
+                    m_player.setLane(Lane::L2);
+                    break;
+                case SDLK_m:
+                    requestModeToggle();
+                    break;
                 case SDLK_ESCAPE: m_running = false; break;
             }
         }
@@ -242,6 +355,9 @@ DashboardData UI::makeDashboardData() const {
     data.rightRpm = m_rightRpm;
     data.vddaMv = m_vddaMv;
     data.mcuStatus = m_mcuStatus;
+    data.serialPort = m_serialPort;
+    data.autoMode = m_autoMode;
+    data.modeCommandPending = m_pendingModeCommand != -1;
     data.telemetryFresh = m_telemetryFresh;
     data.serialConnected = m_serialConnected;
     data.lastRxOk = m_lastRxOk;

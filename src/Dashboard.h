@@ -22,6 +22,9 @@ struct DashboardData {
     int rightRpm = 0;
     int vddaMv = 0;
     int mcuStatus = 0;
+    int serialPort = 0;
+    bool autoMode = false;
+    bool modeCommandPending = false;
     bool telemetryFresh = false;
     bool serialConnected = false;
     bool lastRxOk = false;

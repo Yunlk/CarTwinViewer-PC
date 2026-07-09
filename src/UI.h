@@ -43,12 +43,17 @@ private:
     std::atomic<int> m_rightRpm{ 0 };
     std::atomic<int> m_vddaMv{ 0 };
     std::atomic<int> m_mcuStatus{ 0 };
+    std::atomic<int> m_serialPort{ 0 };
+    std::atomic<int> m_pendingModeCommand{ -1 };
+    std::atomic<bool> m_autoMode{ false };
     int m_collisionCount = 0;
 
     void serialLoop();
     void processSerialBytes(const char* data, int len);
     void handleSerialFrame(const char* frame, int len);
     bool parseTelemetryFrame(const char* frame, int len);
+    void requestModeToggle();
+    void requestMode(int mode);
     void handleInput();
     void drawCollisionBox() const;
     DashboardData makeDashboardData() const;

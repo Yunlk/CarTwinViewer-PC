@@ -14,6 +14,10 @@ constexpr int ROAD_HEIGHT   = 600;
 constexpr int ROAD_SPEED    = 5;
 constexpr int DASHBOARD_WIDTH = WIN_WIDTH - ROAD_WIDTH;
 constexpr int DASHBOARD_X     = ROAD_WIDTH;
+constexpr int MODE_TOGGLE_X   = DASHBOARD_X + 104;
+constexpr int MODE_TOGGLE_Y   = 270;
+constexpr int MODE_TOGGLE_W   = 76;
+constexpr int MODE_TOGGLE_H   = 24;
 
 // ========== 主车参数 ==========
 constexpr int CAR_WIDTH     = 98;
@@ -42,12 +46,12 @@ constexpr const char* IMG_OBSTACLE   = "assets/Car2.png";
 constexpr const char* IMG_OBSTACLE_OUT = "assets/Car01.png";
 
 // ========== 串口 ==========
-constexpr int  COM_PORT       = 12;
 constexpr int  COM_BAUD       = 9600;
 constexpr int  COM_BITS       = 8;
 constexpr int  COM_STOPBITS   = 1;
 constexpr int  COM_PARITY     = 0;
 constexpr int  COM_TIME_MS    = 5;
+constexpr int  COM_RESCAN_MS  = 500;
 constexpr int  COM_BUF_SIZE   = 128;
 constexpr int  OBSTACLE_FRAME_SIZE = 10;
 constexpr int  DATA_OCT       = 10;
@@ -55,6 +59,10 @@ constexpr int  DATA_OCT       = 10;
 constexpr char SOFT_CMD_BEGIN = '%';
 constexpr char SOFT_CMD_END   = '$';
 constexpr char SOFT_CMD_RET   = '\0';
+
+constexpr int CONTROL_MODE_AUTO   = 0;
+constexpr int CONTROL_MODE_MANUAL = 1;
+constexpr int MCU_STATUS_AUTO_MODE = 0x04;
 
 // ========== 点是否在矩形内 ==========
 inline bool pointInRect(int px, int py, int rx, int ry, int rw, int rh) {
