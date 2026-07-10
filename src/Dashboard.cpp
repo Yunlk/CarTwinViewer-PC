@@ -115,10 +115,19 @@ void Dashboard::draw(SDL_Renderer* renderer, const DashboardData& data) const {
 
     drawSection(renderer, SECTION_X, 262, SECTION_W, 74);
     drawText(renderer, SECTION_X + 10, 274, "MODE", 1, TEXT);
-    drawStatusLed(renderer, SECTION_X + 62, 271,
-                  data.autoMode ? GREEN : (data.modeCommandPending ? AMBER : MUTED));
-    fillRect(renderer, {MODE_TOGGLE_X, MODE_TOGGLE_Y, MODE_TOGGLE_W, MODE_TOGGLE_H},
-             data.autoMode ? GREEN : SDL_Color{25, 39, 52, 255});
+    {
+        SDL_Color modeLedColor = MUTED;
+        SDL_Color modeToggleColor = SDL_Color{25, 39, 52, 255};
+        if (data.autoMode) {
+            modeLedColor = data.serialConnected ? GREEN : RED;
+            modeToggleColor = data.serialConnected ? GREEN : RED;
+        } else if (data.modeCommandPending) {
+            modeLedColor = AMBER;
+        }
+        drawStatusLed(renderer, SECTION_X + 62, 271, modeLedColor);
+        fillRect(renderer, {MODE_TOGGLE_X, MODE_TOGGLE_Y, MODE_TOGGLE_W, MODE_TOGGLE_H},
+                 modeToggleColor);
+    }
     drawRect(renderer, {MODE_TOGGLE_X, MODE_TOGGLE_Y, MODE_TOGGLE_W, MODE_TOGGLE_H},
              data.modeCommandPending ? AMBER : BORDER);
     drawText(renderer, MODE_TOGGLE_X + 14, MODE_TOGGLE_Y + 7,

@@ -10,20 +10,6 @@ bool keyEquals(const char* key, int len, const char* expected) {
            std::strncmp(key, expected, len) == 0;
 }
 
-Lane laneFromX(int x) {
-    const int d0 = std::abs(x - LANE_0_X);
-    const int d1 = std::abs(x - LANE_1_X);
-    const int d2 = std::abs(x - LANE_2_X);
-
-    if (d0 <= d1 && d0 <= d2) {
-        return Lane::L0;
-    }
-    if (d1 <= d0 && d1 <= d2) {
-        return Lane::L1;
-    }
-    return Lane::L2;
-}
-
 bool pointInModeToggle(int x, int y) {
     return x >= MODE_TOGGLE_X && x <= MODE_TOGGLE_X + MODE_TOGGLE_W &&
            y >= MODE_TOGGLE_Y && y <= MODE_TOGGLE_Y + MODE_TOGGLE_H;
@@ -201,7 +187,7 @@ void UI::handleSerialFrame(const char* frame, int len) {
     }
 
     m_road.unpackRecvBuf(frame, m_player);
-    m_player.lane = laneFromX(m_player.x);
+    m_player.lane = laneFromX(m_player.targetX);
 }
 
 bool UI::parseTelemetryFrame(const char* frame, int len) {
@@ -248,8 +234,10 @@ bool UI::parseTelemetryFrame(const char* frame, int len) {
         }
 
         if (keyEquals(&frame[keyStart], keyLen, "X")) {
-            m_player.x = static_cast<int>(value);
-            m_player.lane = laneFromX(m_player.x);
+            int newX = static_cast<int>(value);
+            if (newX != m_player.targetX) {
+                m_player.targetX = newX;
+            }
         } else if (keyEquals(&frame[keyStart], keyLen, "Y")) {
             m_player.y = static_cast<int>(value);
         } else if (keyEquals(&frame[keyStart], keyLen, "HB")) {
@@ -370,6 +358,7 @@ void UI::run() {
         handleInput();
 
         m_obstacle.update(m_player);
+        m_player.update();
 
         SDL_SetRenderDrawColor(m_renderer, 255, 255, 255, 255);
         SDL_RenderClear(m_renderer);
@@ -389,6 +378,7 @@ void UI::run() {
 
         if (collided) {
             printf("Collision detected! Reset.\n");
+            m_player.targetX = m_player.x;
             m_player.reset();
             m_obstacle.reset();
             continue;

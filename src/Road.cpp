@@ -16,7 +16,7 @@ void Road::draw(SDL_Renderer* renderer) {
 
 void Road::unpackRecvBuf(const char* buf, Car& car) {
     if (buf[0] == SOFT_CMD_BEGIN) {
-        car.x = atoi(&buf[1]);
+        car.targetX = atoi(&buf[1]);
         car.y = atoi(&buf[5]);
     }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SDL.h>
+#include <cstdlib>
 
 // ========== 屏幕 / 窗口 ==========
 constexpr int WIN_WIDTH   = 560;
@@ -77,4 +78,14 @@ inline int laneToX(Lane lane) {
         case Lane::L2: return LANE_2_X;
     }
     return LANE_1_X;
+}
+
+// ========== 根据 X 坐标推断车道 ==========
+inline Lane laneFromX(int x) {
+    const int d0 = std::abs(x - LANE_0_X);
+    const int d1 = std::abs(x - LANE_1_X);
+    const int d2 = std::abs(x - LANE_2_X);
+    if (d0 <= d1 && d0 <= d2) return Lane::L0;
+    if (d1 <= d0 && d1 <= d2) return Lane::L1;
+    return Lane::L2;
 }
